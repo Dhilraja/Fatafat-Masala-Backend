@@ -134,7 +134,7 @@ app.post("/login", async (req, res, next) => {
     res.cookie("access_token", token, {
       httpOnly: true,
       secure: true, // MUST be false on http
-      sameSite: "lax", // allows cross-origin dev
+      sameSite: "None", // allows cross-origin dev
       maxAge: 10 * 60 * 1000,
     });
     return res.json({ message: "Login successful", data: data });
