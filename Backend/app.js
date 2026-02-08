@@ -42,9 +42,11 @@ app.use(bodyParser.urlencoded({ extended: false }));
 //   next();
 // });
 
+//  https://fatafat-masala-frontend.onrender.com
+
 app.use(
   cors({
-    origin: "http://localhost:4200", // exact frontend origin
+    origin: "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
     credentials: true,
   }),
 );
@@ -148,8 +150,8 @@ app.post("/logout", async (req, res, next) => {
   try {
     res.clearCookie("access_token", {
       httpOnly: true,
-      secure: false, // same as when you set it
-      sameSite: "lax", // same as original
+      secure: true, // same as when you set it
+      sameSite: "None", // same as original
       path: "/", // must match path where cookie was set
     });
     return res.status(200).json({ message: "Logged out successfully" });
