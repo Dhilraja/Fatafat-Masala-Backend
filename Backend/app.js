@@ -42,7 +42,8 @@ app.use(bodyParser.urlencoded({ extended: false }));
 //   next();
 // });
 
-//  https://fatafat-masala-frontend.onrender.com
+// https://fatafat-masala-frontend.onrender.com
+// http://localhost:4200
 
 app.use(
   cors({
@@ -327,12 +328,25 @@ app.post(
     try {
       const { id, flag } = req.body;
       const cart = await Cart.findOne({ userId: req.user.userId });
-      if (!cart)
-        return res
-          .status(500)
-          .json({ message: "Cannot find products in cart for the user" });
-      const selectedProduct = cart.items.find((ele) => ele.productId == id);
       const foundProduct = await Product.findById(id);
+      if (!cart) {
+        newItem = [
+          {
+            productId: foundProduct._id,
+            name: foundProduct.name,
+            price: foundProduct.price,
+            quantity: 1,
+          },
+        ];
+        await Cart.create({
+          userId: req.user.userId,
+          items: newItem,
+        });
+        return res.status(200).json({
+          message: "Cart is created and product is added successfully",
+        });
+      }
+      const selectedProduct = cart.items.find((ele) => ele.productId == id);
       if (flag) {
         if (!selectedProduct) {
           const item = {
