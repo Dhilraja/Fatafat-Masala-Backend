@@ -44,10 +44,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV == "development"
-        ? "http://localhost:4200"
-        : "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
+    origin: "http://localhost:4200", // exact frontend origin
     credentials: true,
   }),
 );
@@ -306,18 +303,92 @@ app.get("/generate-description", async (req, res, next) => {
   }
 });
 
-app.get("/cart-products", async (req, res, next) => {});
+app.get("/cart-products", authMiddleware, async (req, res, next) => {
+  try {
+    const cartProducts = await Cart.findOne({ userId: req.user.userId });
+    return res.status(200).json({
+      message: "Cart products for the user has been fetched successfully",
+      data: cartProducts?.items ?? [],
+    });
+  } catch (error) {
+    console.log(error);
+    return res
+      .status(500)
+      .json({ message: "Error in fetching cart products for the user" });
+  }
+});
 
-// app.post("/add-remove-cart-products", async (req, res, next) => {
-//   try {
-//     const { id, flag } = req.body;
-//     if (req?.user?.userId) {
-//       const cart = await Cart.find({ userId: req.user });
-//     }
-
-//   } catch (error) {
-
-//   }
-// })
+app.post(
+  "/add-remove-cart-products",
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const { id, flag } = req.body;
+      const cart = await Cart.findOne({ userId: req.user.userId });
+      if (!cart)
+        return res
+          .status(500)
+          .json({ message: "Cannot find products in cart for the user" });
+      const selectedProduct = cart.items.find((ele) => ele.productId == id);
+      const foundProduct = await Product.findById(id);
+      if (flag) {
+        if (!selectedProduct) {
+          const item = {
+            productId: foundProduct._id,
+            name: foundProduct.name,
+            price: foundProduct.price,
+            quantity: 1,
+          };
+          await Cart.findOneAndUpdate(
+            { userId: req.user.userId },
+            {
+              $push: { items: item },
+              $set: { updatedAt: Date.now() },
+            },
+          );
+          return res.status(200).json({ message: "Product is added to cart" });
+        }
+        await Cart.findOneAndUpdate(
+          { userId: req.user.userId, "items.productId": id },
+          {
+            $inc: { "items.$.quantity": 1 },
+            $set: { updatedAt: Date.now() },
+          },
+        );
+        return res
+          .status(200)
+          .json({ message: "Product is incremented to cart" });
+      } else {
+        if (!selectedProduct)
+          return res
+            .status(500)
+            .json({ message: "Selected product is not found in the cart" });
+        if (selectedProduct.quantity == 1) {
+          const itemIndex = cart.items.findIndex(
+            (item) => item.productId == id,
+          );
+          cart.items.splice(itemIndex, 1);
+          cart.updatedAt = Date.now();
+          await cart.save();
+        }
+        await Cart.findOneAndUpdate(
+          { userId: req.user.userId, "items.productId": id },
+          {
+            $inc: { "items.$.quantity": -1 },
+            $set: { updatedAt: Date.now() },
+          },
+        );
+        return res
+          .status(200)
+          .json({ message: "Product is decremented from cart" });
+      }
+    } catch (error) {
+      console.log(error);
+      return res
+        .status(500)
+        .json({ message: "Error in adding or removing products in cart" });
+    }
+  },
+);
 
 module.exports = app;
