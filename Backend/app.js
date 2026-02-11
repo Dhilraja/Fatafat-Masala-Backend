@@ -5,10 +5,13 @@ const User = require("./Models/user");
 const Product = require("./Models/product");
 // const Order = require("./Models/order");
 const Cart = require("./Models/cart");
+const LoginHistory = require("./Models/loginHistory");
+const Otp = require("./Models/otp");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const { InferenceClient } = require("@huggingface/inference");
+const nodemailer = require("nodemailer");
 
 const mongoose = require("mongoose");
 
@@ -47,7 +50,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin: "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
+    origin: "http://localhost:4200", // exact frontend origin
     credentials: true,
   }),
 );
@@ -73,7 +76,6 @@ app.get("/login-details", (req, res, next) => {
   console.log("token -- ", token);
   try {
     const decodedData = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("Decoded Data -- ", decodedData);
     return res.status(200).json({
       message: "User details fetched successfully",
       flag: true,
@@ -140,6 +142,12 @@ app.post("/login", async (req, res, next) => {
       sameSite: "None", // allows cross-origin dev
       maxAge: 10 * 60 * 1000,
     });
+    const loginHistory = new LoginHistory({
+      userId: user._id,
+      username: user.name,
+      loggedAt: Date.now(),
+    });
+    await loginHistory.save();
     return res.json({ message: "Login successful", data: data });
   } catch (error) {
     console.log(error);
@@ -248,10 +256,8 @@ app.post("/set-cart-products", authMiddleware, async (req, res, next) => {
   try {
     const products = req.body;
     let selectedProducts = [];
-    console.log("products ---> ", products);
     for (const product of products) {
       const foundProduct = await Product.findById(product.id);
-      console.log("foundProduct ------> ", foundProduct);
       if (!foundProduct) {
         return res.status(500).json({
           message: `Cannot find product with given id: ${product.id}`,
@@ -264,14 +270,24 @@ app.post("/set-cart-products", authMiddleware, async (req, res, next) => {
         quantity: product.quantity,
       });
     }
-    await Cart.create({
-      userId: req.user.userId,
-      items: selectedProducts,
-    });
-    // await cart.save();
-    return res
-      .status(200)
-      .json({ message: "Products added to cart successfully" });
+    const cart = await Cart.findOne({ userId: req.user.userId });
+    console.log("cart ----> ", cart);
+    if (cart) {
+      await Cart.findByIdAndUpdate(cart._id, {
+        items: selectedProducts,
+      });
+      return res
+        .status(200)
+        .json({ message: "Products added to cart successfully" });
+    } else {
+      await Cart.create({
+        userId: req.user.userId,
+        items: selectedProducts,
+      });
+      return res.status(200).json({
+        message: "Cart is created and products added to cart successfully",
+      });
+    }
   } catch (error) {
     console.error(error);
     return res
@@ -406,5 +422,125 @@ app.post(
     }
   },
 );
+
+app.post("/send-otp", async (req, res, next) => {
+  try {
+    const { email, resendFlag } = req.body;
+    const otpNumber = Math.floor(100000 + Math.random() * 900000); // 6-digit
+    const otpHash = await bcrypt.hash(otpNumber.toString(), 10);
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min
+    await Otp.deleteMany({ email });
+    const otp = new Otp({
+      email,
+      otpHash,
+      expiresAt,
+    });
+    await otp.save();
+    try {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
+        },
+      });
+      const emailResponse = await transporter.sendMail({
+        from: "aadhilraja@gmail.com",
+        to: email,
+        subject: "Your One-Time Password (OTP) for Fatafat Masala",
+        html: `
+          <html>
+            <head>
+              <meta charset="UTF-8" />
+              <title>SpicyMart OTP</title>
+              <style>
+                body {
+                  font-family: Arial, sans-serif;
+                  background-color: #fff8f0;
+                  color: #333;
+                  padding: 20px;
+                }
+                .container {
+                  max-width: 600px;
+                  margin: auto;
+                  padding: 20px;
+                  text-align: center;
+                  background-color: #fff;
+                }
+                .otp {
+                  font-size: 28px;
+                  font-weight: bold;
+                  color: #e74c3c;
+                  margin: 20px 0;
+                }
+                .footer {
+                  font-size: 14px;
+                  color: #888;
+                  margin-top: 30px;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h2>Verify Your Email</h2>
+                <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
+                <div class="otp">${otpNumber}</div>
+                <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+                <p>If you did not request this, please ignore this email.</p>
+                <div class="footer">
+                  &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">spicymart.com</a>
+                </div>
+              </div>
+            </body>
+          </html>
+        `,
+      });
+      console.log(emailResponse);
+      return res
+        .status(200)
+        .json({ message: `OTP has been sent to ${email} successfully` });
+    } catch (err) {
+      console.error(err);
+      if (
+        err.code === "EENVELOPE" ||
+        err.responseCode === 550 ||
+        err.response.includes("Invalid recipient")
+      ) {
+        res.status(400).json({ message: `Email does not exist` });
+      }
+    }
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ message: "Error in sending OTP" });
+  }
+});
+
+app.post("/validate-otp", async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+    const otpDocument = await Otp.findOne({ email });
+    if (!otpDocument)
+      return res
+        .status(200)
+        .json({ message: `OTP is not generated for validation` });
+    if (otpDocument.attempts >= 3) {
+      await Otp.findOneAndDelete({ email });
+      return res.status(200).json({ message: "Too many incorrect attempts" });
+    }
+    const isMatch = await bcrypt.compare(otp, otpDocument.otpHash);
+    if (!isMatch) {
+      await Otp.findOneAndUpdate({ email }, { $inc: { attempts: 1 } });
+      return res.status(200).json({
+        message: `Incorrect OTP. ${2 - otpDocument.attempts} attempt${otpDocument.attempts == 0 ? "s" : ""} left`,
+      });
+    }
+    await Otp.findOneAndDelete({ email });
+    return res
+      .status(200)
+      .json({ message: "OTP verified successfully", flag: true });
+  } catch (error) {
+    res.status(500).json({ message: "Error in validating OTP" });
+  }
+});
 
 module.exports = app;
