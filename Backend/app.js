@@ -3,7 +3,7 @@ const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const User = require("./Models/user");
 const Product = require("./Models/product");
-// const Order = require("./Models/order");
+const Order = require("./Models/order");
 const Cart = require("./Models/cart");
 const LoginHistory = require("./Models/loginHistory");
 const Otp = require("./Models/otp");
@@ -12,6 +12,15 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const { InferenceClient } = require("@huggingface/inference");
 const nodemailer = require("nodemailer");
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
+const upload = require("./middleware/upload");
+const cloudinary = require("./config/cloudinary");
+
+// const razorpay = new Razorpay({
+//   key_id: process.env.RAZORPAY_KEY_ID,
+//   key_secret: process.env.RAZORPAY_KEY_SECRET,
+// });
 
 const mongoose = require("mongoose");
 
@@ -50,7 +59,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin: "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
+    origin: "http://localhost:4200", // exact frontend origin
     credentials: true,
   }),
 );
@@ -73,7 +82,6 @@ const authMiddleware = (req, res, next) => {
 
 app.get("/login-details", (req, res, next) => {
   const token = req.cookies.access_token;
-  console.log("token -- ", token);
   try {
     const decodedData = jwt.verify(token, process.env.JWT_SECRET);
     return res.status(200).json({
@@ -82,7 +90,6 @@ app.get("/login-details", (req, res, next) => {
       data: decodedData,
     });
   } catch (error) {
-    console.log(error);
     return res
       .status(200)
       .json({ message: "User not logged in", flag: false, data: null });
@@ -155,7 +162,7 @@ app.post("/login", async (req, res, next) => {
   }
 });
 
-app.post("/logout", async (req, res, next) => {
+app.post("/logout", authMiddleware, async (req, res, next) => {
   try {
     res.clearCookie("access_token", {
       httpOnly: true,
@@ -181,42 +188,126 @@ app.get("/products", async (req, res, next) => {
   }
 });
 
-app.post("/add-product", authMiddleware, async (req, res, next) => {
-  try {
-    const { name, mrp, price, description } = req.body;
-    const product = new Product({
-      name,
-      mrp,
-      price,
-      description,
-    });
-    await product.save();
-    return res.status(201).json({ message: "Product saved successfully" });
-  } catch (error) {
-    return res.status(500).json({ message: "Error in saving product" });
-  }
-});
-
-app.patch("/update-product", authMiddleware, async (req, res, next) => {
-  try {
-    const { id, name, mrp, price, description } = req.body;
-    const product = await Product.findById(id);
-    if (product) {
-      await Product.findByIdAndUpdate(id, {
-        name: name,
-        mrp: mrp,
-        price: price,
-        description: description,
-        updatedAt: Date.now(),
-      });
-      return res.status(201).json({ message: "Product updated successfully" });
-    } else {
-      return res.status(500).json({ message: "Cannot find product ID" });
+app.post(
+  "/add-product",
+  upload.single("image"),
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const { name, mrp, price, description } = req.body;
+      try {
+        const tempCloudinary = require("cloudinary").v2;
+        tempCloudinary.config({
+          cloud_name: process.env.CLOUD_NAME,
+          api_key: process.env.CLOUD_API_KEY,
+          api_secret: process.env.CLOUD_API_SECRET,
+        });
+        // console.log(tempCloudinary.config());
+        const stream = tempCloudinary.uploader.upload_stream(
+          { folder: "my_app_uploads" },
+          async (error, result) => {
+            if (error) {
+              console.error(error);
+              return res
+                .status(500)
+                .json({ message: "Error in uploading image to Cloudinary" });
+            }
+            const product = new Product({
+              name,
+              mrp,
+              price,
+              description,
+              images: [{ url: result.secure_url, publicId: result.public_id }],
+            });
+            await product.save();
+            return res
+              .status(201)
+              .json({ message: "Product saved successfully" });
+          },
+        );
+        stream.end(req.file.buffer);
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Error in uploading image" });
+      }
+    } catch (error) {
+      return res.status(500).json({ message: "Error in saving product" });
     }
-  } catch (error) {
-    return res.status(500).json({ message: "Error in updating product" });
-  }
-});
+  },
+);
+
+app.patch(
+  "/update-product",
+  upload.single("image"),
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      console.log(req.body);
+      const { id, name, mrp, price, description } = req.body;
+      const product = await Product.findById(id);
+      if (product) {
+        if (req.file) {
+          try {
+            const tempCloudinary = require("cloudinary").v2;
+            tempCloudinary.config({
+              cloud_name: process.env.CLOUD_NAME,
+              api_key: process.env.CLOUD_API_KEY,
+              api_secret: process.env.CLOUD_API_SECRET,
+            });
+            // console.log(tempCloudinary.config());
+            if (product.images[0]?.publicId)
+              await cloudinary.uploader.destroy(product.images[0]?.publicId);
+            const stream = tempCloudinary.uploader.upload_stream(
+              { folder: "my_app_uploads" },
+              async (error, result) => {
+                if (error) {
+                  console.error(error);
+                  return res.status(500).json({
+                    message: "Error in uploading image to Cloudinary",
+                  });
+                }
+                await Product.findByIdAndUpdate(id, {
+                  name: name,
+                  mrp: mrp,
+                  price: price,
+                  description: description,
+                  images: [
+                    { url: result.secure_url, publicId: result.public_id },
+                  ],
+                  updatedAt: Date.now(),
+                });
+                return res
+                  .status(200)
+                  .json({ message: "Product updated successfully" });
+              },
+            );
+            stream.end(req.file.buffer);
+          } catch (err) {
+            console.error(err);
+            res.status(500).json({ message: "Error in uploading image" });
+          }
+        } else {
+          await Product.findByIdAndUpdate(id, {
+            name: name,
+            mrp: mrp,
+            price: price,
+            description: description,
+            images: product.images,
+            updatedAt: Date.now(),
+          });
+          return res
+            .status(200)
+            .json({ message: "Product updated successfully" });
+        }
+      } else {
+        return res.status(500).json({ message: "Cannot find product ID" });
+      }
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Error in updating product" });
+    }
+  },
+);
 
 app.patch("/enable-disable-product", authMiddleware, async (req, res, next) => {
   try {
@@ -245,9 +336,19 @@ app.patch("/enable-disable-product", authMiddleware, async (req, res, next) => {
 app.delete("/delete-product", authMiddleware, async (req, res, next) => {
   try {
     const { id } = req.query;
+    const product = await Product.findById(id);
+    const tempCloudinary = require("cloudinary").v2;
+    tempCloudinary.config({
+      cloud_name: process.env.CLOUD_NAME,
+      api_key: process.env.CLOUD_API_KEY,
+      api_secret: process.env.CLOUD_API_SECRET,
+    });
+    if (product.images[0]?.publicId)
+      await cloudinary.uploader.destroy(product.images[0]?.publicId);
     await Product.findByIdAndDelete(id);
     return res.status(200).json({ message: "Product deleted successfully" });
   } catch (error) {
+    console.error(error);
     return res.status(500).json({ message: "Error in deleting the product" });
   }
 });
@@ -296,7 +397,7 @@ app.post("/set-cart-products", authMiddleware, async (req, res, next) => {
   }
 });
 
-app.get("/generate-description", async (req, res, next) => {
+app.get("/generate-description", authMiddleware, async (req, res, next) => {
   const { input } = req.query;
   console.log(req);
   console.log(input);
@@ -488,7 +589,7 @@ app.post("/send-otp", async (req, res, next) => {
                 <p>This OTP is valid for <strong>5 minutes</strong>.</p>
                 <p>If you did not request this, please ignore this email.</p>
                 <div class="footer">
-                  &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">spicymart.com</a>
+                  &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
                 </div>
               </div>
             </body>
@@ -540,6 +641,246 @@ app.post("/validate-otp", async (req, res, next) => {
       .json({ message: "OTP verified successfully", flag: true });
   } catch (error) {
     res.status(500).json({ message: "Error in validating OTP" });
+  }
+});
+
+app.get("/checkout-products", authMiddleware, async (req, res, next) => {
+  try {
+    const cart = await Cart.findOne({ userId: req.user.userId });
+    if (!cart)
+      return res.status(500).json({ message: "Cannot find cart for the user" });
+    let totalPrice = 0;
+    let totalQuantity = 0;
+    const deliveryFees = 50;
+    let response = [];
+    for (const product of cart.items) {
+      const selectedProduct = await Product.findById(product.productId);
+      totalPrice += product.quantity * selectedProduct.price;
+      totalQuantity += product.quantity;
+      response.push({
+        productId: selectedProduct._id,
+        productName: selectedProduct.name,
+        price: product.quantity * selectedProduct.price,
+        quantity: product.quantity,
+      });
+    }
+    totalPrice += deliveryFees;
+    return res.status(200).json({
+      message: "Checkout products retrieved successfully",
+      data: {
+        products: response,
+        totalQuantity,
+        totalPrice,
+        deliveryFees,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in getting checkout products" });
+  }
+});
+
+app.post("/address", authMiddleware, async (req, res, next) => {
+  try {
+    const { _id, name, line1, line2, city, state, pincode, flag } = req.body;
+    const address = {
+      name: name.trim(),
+      line1: line1.trim(),
+      line2: line2.trim(),
+      city: city.trim(),
+      state: state.trim(),
+      pincode: pincode.trim(),
+    };
+    if (flag) {
+      await User.updateOne(
+        { _id: req.user.userId },
+        { $push: { addresses: address } },
+      );
+      return res.status(200).json({ message: "Address added successfully" });
+    } else {
+      const result = await User.updateOne(
+        { _id: req.user.userId, "addresses._id": _id },
+        {
+          $set: {
+            "addresses.$.name": address.name,
+            "addresses.$.line1": address.line1,
+            "addresses.$.line2": address.line2,
+            "addresses.$.city": address.city,
+            "addresses.$.state": address.state,
+            "addresses.$.pincode": address.pincode,
+          },
+        },
+      );
+      console.log(result);
+      return res.status(200).json({ message: "Address updated successfully" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in adding or updating address" });
+  }
+});
+
+app.delete("/delete-address", authMiddleware, async (req, res, next) => {
+  const { id } = req.query;
+  try {
+    await User.updateOne(
+      { _id: req.user.userId },
+      {
+        $pull: {
+          addresses: { _id: id },
+        },
+      },
+    );
+    return res.status(200).json({ message: "Address deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in deleting address" });
+  }
+});
+
+app.get("/profile", authMiddleware, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    const profile = {
+      addresses: user.addresses,
+    };
+    return res.status(200).json({
+      message: "User profile details fetched successfully",
+      data: profile,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in fetching profile details" });
+  }
+});
+
+function generateOrderId() {
+  const prefix = "FM";
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  const datePart = `${year}${month}${day}`;
+
+  const randomPart = Math.floor(1000 + Math.random() * 9000); // 4 digit
+
+  return `${prefix}-${datePart}-${randomPart}`;
+}
+
+app.post("/place-order", authMiddleware, async (req, res, next) => {
+  try {
+    const cart = await Cart.findOne({ userId: req.user.userId });
+    let totalAmount = 0;
+    console.log("Cart ---> ", cart);
+    const items = cart?.items?.map((ele) => {
+      totalAmount += ele.price * ele.quantity;
+      return {
+        productId: ele.productId,
+        name: ele.name,
+        price: ele.price,
+        quantity: ele.quantity,
+        total: ele.price * ele.quantity,
+      };
+    });
+    const shippingAddress = req.body.address;
+    let order;
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (attempts < maxAttempts) {
+      try {
+        const orderNumber = generateOrderId();
+        console.log("Items ---> ", items);
+        order = await Order.create({
+          orderNumber,
+          userId: req.user.userId,
+          items,
+          totalAmount,
+          shippingAddress,
+        });
+        if (order) {
+          await Cart.deleteOne({ userId: req.user.userId });
+          return res.status(200).json({ message: "Order placed successfully" });
+        } else
+          return res.status(500).json({ message: "Error in placing order" });
+      } catch (err) {
+        if (err.code === 11000) {
+          // Duplicate key error
+          attempts++;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    throw new Error("Could not generate unique Order ID");
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error in placing order" });
+  }
+});
+
+app.get("/get-orders", async (req, res, next) => {
+  try {
+    const orders = await Order.find();
+    return res
+      .status(200)
+      .json({ message: "Orders fetched successfully", data: orders });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error in fetching orders" });
+  }
+});
+
+app.post("/upload-image", upload.single("image"), async (req, res, next) => {
+  try {
+    const tempCloudinary = require("cloudinary").v2;
+    tempCloudinary.config({
+      cloud_name: process.env.CLOUD_NAME,
+      api_key: process.env.CLOUD_API_KEY,
+      api_secret: process.env.CLOUD_API_SECRET,
+    });
+    // console.log(tempCloudinary.config());
+    const stream = tempCloudinary.uploader.upload_stream(
+      { folder: "my_app_uploads" },
+      (error, result) => {
+        if (error) {
+          console.error(error);
+          return res
+            .status(500)
+            .json({ message: "Error in uploading image to Cloudinary" });
+        }
+        return res.status(200).json({ url: result.secure_url });
+      },
+    );
+
+    stream.end(req.file.buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error in uploading image" });
+  }
+});
+
+app.get("/product-details", async (req, res, next) => {
+  try {
+    const { id } = req.query;
+    const product = await Product.findById(id);
+    if (!product)
+      return res
+        .status(500)
+        .json({ message: "Product not found", flag: false });
+    return res.status(200).json({
+      message: "Product details fetched successfully",
+      flag: true,
+      data: product,
+    });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Error in fetching product details", flag: false });
   }
 });
 

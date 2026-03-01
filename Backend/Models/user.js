@@ -5,7 +5,6 @@ const AddressSchema = mongoose.Schema(
     name: { type: String, required: true },
     line1: { type: String, required: true },
     line2: String,
-    landmark: String,
     city: { type: String, required: true },
     state: { type: String, required: true },
     pincode: { type: String, required: true },
