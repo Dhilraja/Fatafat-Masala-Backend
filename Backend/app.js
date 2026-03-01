@@ -59,7 +59,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin: "http://localhost:4200", // exact frontend origin
+    origin: "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
     credentials: true,
   }),
 );
