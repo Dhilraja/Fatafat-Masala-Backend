@@ -16,6 +16,7 @@ const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const upload = require("./middleware/upload");
 const cloudinary = require("./config/cloudinary");
+const { Resend } = require("resend");
 
 // const razorpay = new Razorpay({
 //   key_id: process.env.RAZORPAY_KEY_ID,
@@ -425,7 +426,9 @@ app.get("/generate-description", authMiddleware, async (req, res, next) => {
 
 app.get("/cart-products", authMiddleware, async (req, res, next) => {
   try {
-    const cartProducts = await Cart.findOne({ userId: req.user.userId });
+    const cartProducts = await Cart.findOne({
+      userId: req.user.userId,
+    });
     return res.status(200).json({
       message: "Cart products for the user has been fetched successfully",
       data: cartProducts?.items ?? [],
@@ -538,68 +541,122 @@ app.post("/send-otp", async (req, res, next) => {
     });
     await otp.save();
     try {
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
+      // const transporter = nodemailer.createTransport({
+      //   service: "gmail",
+      //   auth: {
+      //     user: process.env.EMAIL_USER,
+      //     pass: process.env.EMAIL_PASS,
+      //   },
+      // });
+      // const emailResponse = await transporter.sendMail({
+      //   from: "aadhilraja@gmail.com",
+      //   to: email,
+      //   subject: "Your One-Time Password (OTP) for Fatafat Masala",
+      //   html: `
+      //     <html>
+      //       <head>
+      //         <meta charset="UTF-8" />
+      //         <title>SpicyMart OTP</title>
+      //         <style>
+      //           body {
+      //             font-family: Arial, sans-serif;
+      //             background-color: #fff8f0;
+      //             color: #333;
+      //             padding: 20px;
+      //           }
+      //           .container {
+      //             max-width: 600px;
+      //             margin: auto;
+      //             padding: 20px;
+      //             text-align: center;
+      //             background-color: #fff;
+      //           }
+      //           .otp {
+      //             font-size: 28px;
+      //             font-weight: bold;
+      //             color: #e74c3c;
+      //             margin: 20px 0;
+      //           }
+      //           .footer {
+      //             font-size: 14px;
+      //             color: #888;
+      //             margin-top: 30px;
+      //           }
+      //         </style>
+      //       </head>
+      //       <body>
+      //         <div class="container">
+      //           <h2>Verify Your Email</h2>
+      //           <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
+      //           <div class="otp">${otpNumber}</div>
+      //           <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+      //           <p>If you did not request this, please ignore this email.</p>
+      //           <div class="footer">
+      //             &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
+      //           </div>
+      //         </div>
+      //       </body>
+      //     </html>
+      //   `,
+      // });
+
+      // const resend = new Resend(process.env.RESEND_API_KEY);
+      // const emailResponse = await resend.emails.send({
+      //   from: "onboarding@resend.dev",
+      //   to: "aadhilraja@gmail.com",
+      //   subject: "Your One-Time Password (OTP) for Fatafat Masala",
+      //   html: `
+      //     <html>
+      //       <head>
+      //         <meta charset="UTF-8" />
+      //         <title>SpicyMart OTP</title>
+      //         <style>
+      //           body {
+      //             font-family: Arial, sans-serif;
+      //             background-color: #fff8f0;
+      //             color: #333;
+      //             padding: 20px;
+      //           }
+      //           .container {
+      //             max-width: 600px;
+      //             margin: auto;
+      //             padding: 20px;
+      //             text-align: center;
+      //             background-color: #fff;
+      //           }
+      //           .otp {
+      //             font-size: 28px;
+      //             font-weight: bold;
+      //             color: #e74c3c;
+      //             margin: 20px 0;
+      //           }
+      //           .footer {
+      //             font-size: 14px;
+      //             color: #888;
+      //             margin-top: 30px;
+      //           }
+      //         </style>
+      //       </head>
+      //       <body>
+      //         <div class="container">
+      //           <h2>Verify Your Email</h2>
+      //           <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
+      //           <div class="otp">${otpNumber}</div>
+      //           <p>This OTP is valid for <strong>5 minutes</strong>.</p>
+      //           <p>If you did not request this, please ignore this email.</p>
+      //           <div class="footer">
+      //             &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
+      //           </div>
+      //         </div>
+      //       </body>
+      //     </html>
+      //   `,
+      // });
+      // console.log(emailResponse);
+      return res.status(200).json({
+        message: `OTP has been sent to ${email} successfully`,
+        data: otpNumber,
       });
-      const emailResponse = await transporter.sendMail({
-        from: "aadhilraja@gmail.com",
-        to: email,
-        subject: "Your One-Time Password (OTP) for Fatafat Masala",
-        html: `
-          <html>
-            <head>
-              <meta charset="UTF-8" />
-              <title>SpicyMart OTP</title>
-              <style>
-                body {
-                  font-family: Arial, sans-serif;
-                  background-color: #fff8f0;
-                  color: #333;
-                  padding: 20px;
-                }
-                .container {
-                  max-width: 600px;
-                  margin: auto;
-                  padding: 20px;
-                  text-align: center;
-                  background-color: #fff;
-                }
-                .otp {
-                  font-size: 28px;
-                  font-weight: bold;
-                  color: #e74c3c;
-                  margin: 20px 0;
-                }
-                .footer {
-                  font-size: 14px;
-                  color: #888;
-                  margin-top: 30px;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <h2>Verify Your Email</h2>
-                <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
-                <div class="otp">${otpNumber}</div>
-                <p>This OTP is valid for <strong>5 minutes</strong>.</p>
-                <p>If you did not request this, please ignore this email.</p>
-                <div class="footer">
-                  &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
-                </div>
-              </div>
-            </body>
-          </html>
-        `,
-      });
-      console.log(emailResponse);
-      return res
-        .status(200)
-        .json({ message: `OTP has been sent to ${email} successfully` });
     } catch (err) {
       console.error(err);
       if (
@@ -646,7 +703,10 @@ app.post("/validate-otp", async (req, res, next) => {
 
 app.get("/checkout-products", authMiddleware, async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user.userId });
+    const cart = await Cart.findOne({ userId: req.user.userId }).populate(
+      "items.productId",
+      "images",
+    );
     if (!cart)
       return res.status(500).json({ message: "Cannot find cart for the user" });
     let totalPrice = 0;
@@ -662,6 +722,7 @@ app.get("/checkout-products", authMiddleware, async (req, res, next) => {
         productName: selectedProduct.name,
         price: product.quantity * selectedProduct.price,
         quantity: product.quantity,
+        images: product?.productId?.images,
       });
     }
     totalPrice += deliveryFees;
