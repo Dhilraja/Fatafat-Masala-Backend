@@ -347,6 +347,10 @@ app.delete("/delete-product", authMiddleware, async (req, res, next) => {
     if (product.images[0]?.publicId)
       await cloudinary.uploader.destroy(product.images[0]?.publicId);
     await Product.findByIdAndDelete(id);
+    await Cart.updateMany(
+      { "items.productId": id },
+      { $pull: { items: { productId: id } } },
+    );
     return res.status(200).json({ message: "Product deleted successfully" });
   } catch (error) {
     console.error(error);
@@ -802,8 +806,14 @@ app.delete("/delete-address", authMiddleware, async (req, res, next) => {
 app.get("/profile", authMiddleware, async (req, res, next) => {
   try {
     const user = await User.findById(req.user.userId);
+    // const orders = await Order.find({ userId: req.user.userId });
+    const orders = await Order.find({ userId: req.user.userId }).populate({
+      path: "items.productId",
+      select: "images", // only fields you need
+    });
     const profile = {
-      addresses: user.addresses,
+      userDetails: user,
+      orders: orders,
     };
     return res.status(200).json({
       message: "User profile details fetched successfully",
@@ -863,7 +873,9 @@ app.post("/place-order", authMiddleware, async (req, res, next) => {
         });
         if (order) {
           await Cart.deleteOne({ userId: req.user.userId });
-          return res.status(200).json({ message: "Order placed successfully" });
+          return res
+            .status(200)
+            .json({ message: "Order placed successfully", data: order });
         } else
           return res.status(500).json({ message: "Error in placing order" });
       } catch (err) {
@@ -939,9 +951,26 @@ app.get("/product-details", async (req, res, next) => {
     });
   } catch (error) {
     console.error(error);
-    res
+    return res
       .status(500)
       .json({ message: "Error in fetching product details", flag: false });
+  }
+});
+
+app.get("/order-details", async (req, res, next) => {
+  try {
+    const { id } = req.query;
+    console.log(id);
+    const order = await Order.findOne({ _id: id });
+    if (!order) {
+      return res.status(500).json({ message: "Order cannot be found!" });
+    }
+    return res
+      .status(200)
+      .json({ message: "Order details fetched successfully!", data: order });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error in fetching order details" });
   }
 });
 
