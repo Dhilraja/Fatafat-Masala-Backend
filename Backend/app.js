@@ -547,118 +547,6 @@ app.post("/send-otp", async (req, res, next) => {
     });
     await otp.save();
     try {
-      // const transporter = nodemailer.createTransport({
-      //   service: "gmail",
-      //   auth: {
-      //     user: process.env.EMAIL_USER,
-      //     pass: process.env.EMAIL_PASS,
-      //   },
-      // });
-      // const emailResponse = await transporter.sendMail({
-      //   from: "aadhilraja@gmail.com",
-      //   to: email,
-      //   subject: "Your One-Time Password (OTP) for Fatafat Masala",
-      //   html: `
-      //     <html>
-      //       <head>
-      //         <meta charset="UTF-8" />
-      //         <title>SpicyMart OTP</title>
-      //         <style>
-      //           body {
-      //             font-family: Arial, sans-serif;
-      //             background-color: #fff8f0;
-      //             color: #333;
-      //             padding: 20px;
-      //           }
-      //           .container {
-      //             max-width: 600px;
-      //             margin: auto;
-      //             padding: 20px;
-      //             text-align: center;
-      //             background-color: #fff;
-      //           }
-      //           .otp {
-      //             font-size: 28px;
-      //             font-weight: bold;
-      //             color: #e74c3c;
-      //             margin: 20px 0;
-      //           }
-      //           .footer {
-      //             font-size: 14px;
-      //             color: #888;
-      //             margin-top: 30px;
-      //           }
-      //         </style>
-      //       </head>
-      //       <body>
-      //         <div class="container">
-      //           <h2>Verify Your Email</h2>
-      //           <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
-      //           <div class="otp">${otpNumber}</div>
-      //           <p>This OTP is valid for <strong>5 minutes</strong>.</p>
-      //           <p>If you did not request this, please ignore this email.</p>
-      //           <div class="footer">
-      //             &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
-      //           </div>
-      //         </div>
-      //       </body>
-      //     </html>
-      //   `,
-      // });
-
-      // const resend = new Resend(process.env.RESEND_API_KEY);
-      // const emailResponse = await resend.emails.send({
-      //   from: "onboarding@resend.dev",
-      //   to: "aadhilraja@gmail.com",
-      //   subject: "Your One-Time Password (OTP) for Fatafat Masala",
-      //   html: `
-      //     <html>
-      //       <head>
-      //         <meta charset="UTF-8" />
-      //         <title>SpicyMart OTP</title>
-      //         <style>
-      //           body {
-      //             font-family: Arial, sans-serif;
-      //             background-color: #fff8f0;
-      //             color: #333;
-      //             padding: 20px;
-      //           }
-      //           .container {
-      //             max-width: 600px;
-      //             margin: auto;
-      //             padding: 20px;
-      //             text-align: center;
-      //             background-color: #fff;
-      //           }
-      //           .otp {
-      //             font-size: 28px;
-      //             font-weight: bold;
-      //             color: #e74c3c;
-      //             margin: 20px 0;
-      //           }
-      //           .footer {
-      //             font-size: 14px;
-      //             color: #888;
-      //             margin-top: 30px;
-      //           }
-      //         </style>
-      //       </head>
-      //       <body>
-      //         <div class="container">
-      //           <h2>Verify Your Email</h2>
-      //           <p>Hi there! Use the following One-Time Password (OTP) to complete your registration or login at <strong>Fatafat Masala</strong>.</p>
-      //           <div class="otp">${otpNumber}</div>
-      //           <p>This OTP is valid for <strong>5 minutes</strong>.</p>
-      //           <p>If you did not request this, please ignore this email.</p>
-      //           <div class="footer">
-      //             &copy; 2026 Fatafat Masala | <a href="https://fatafatmasala.com">fatfatmasala.com</a>
-      //           </div>
-      //         </div>
-      //       </body>
-      //     </html>
-      //   `,
-      // });
-      // console.log(emailResponse);
       return res.status(200).json({
         message: `OTP has been sent to ${email} successfully`,
         data: otpNumber,
@@ -786,6 +674,35 @@ app.post("/address", authMiddleware, async (req, res, next) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error in adding or updating address" });
+  }
+});
+
+app.post("/reset-password", async (req, res, next) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const otpDocument = await Otp.findOne({ email });
+    if (!otpDocument)
+      return res.status(400).json({ message: "OTP not found or expired" });
+    if (otpDocument.attempts >= 3) {
+      await Otp.findOneAndDelete({ email });
+      return res.status(400).json({ message: "Too many incorrect attempts. Request a new OTP." });
+    }
+    const isMatch = await bcrypt.compare(otp, otpDocument.otpHash);
+    if (!isMatch) {
+      await Otp.findOneAndUpdate({ email }, { $inc: { attempts: 1 } });
+      return res.status(400).json({
+        message: `Incorrect OTP. ${2 - otpDocument.attempts} attempt${otpDocument.attempts === 0 ? "s" : ""} left`,
+      });
+    }
+    await Otp.findOneAndDelete({ email });
+    const user = await User.findOne({ username: email });
+    if (!user) return res.status(404).json({ message: "No account found with this email" });
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await User.updateOne({ username: email }, { $set: { password: hashedPassword } });
+    return res.status(200).json({ message: "Password reset successfully", flag: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in resetting password" });
   }
 });
 
