@@ -8,6 +8,7 @@ const AddressSchema = mongoose.Schema(
     city: { type: String, required: true },
     state: { type: String, required: true },
     pincode: { type: String, required: true },
+    phone: { type: String },
     isDefault: { type: Boolean, default: false },
   },
   { _id: true },

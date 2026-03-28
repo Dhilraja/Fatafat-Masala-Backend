@@ -60,7 +60,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(
   cors({
-    origin: "https://fatafat-masala-frontend.onrender.com", // exact frontend origin
+    origin: "http://localhost:4200", // exact frontend origin
     credentials: true,
   }),
 );
@@ -747,7 +747,7 @@ app.get("/checkout-products", authMiddleware, async (req, res, next) => {
 
 app.post("/address", authMiddleware, async (req, res, next) => {
   try {
-    const { _id, name, line1, line2, city, state, pincode, flag } = req.body;
+    const { _id, name, line1, line2, city, state, pincode, phone, flag } = req.body;
     const address = {
       name: name.trim(),
       line1: line1.trim(),
@@ -755,6 +755,7 @@ app.post("/address", authMiddleware, async (req, res, next) => {
       city: city.trim(),
       state: state.trim(),
       pincode: pincode.trim(),
+      phone: phone ? phone.trim() : undefined,
     };
     if (flag) {
       await User.updateOne(
@@ -773,6 +774,7 @@ app.post("/address", authMiddleware, async (req, res, next) => {
             "addresses.$.city": address.city,
             "addresses.$.state": address.state,
             "addresses.$.pincode": address.pincode,
+            "addresses.$.phone": address.phone,
           },
         },
       );
@@ -782,6 +784,25 @@ app.post("/address", authMiddleware, async (req, res, next) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error in adding or updating address" });
+  }
+});
+
+app.post("/change-password", authMiddleware, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch)
+      return res.status(400).json({ message: "Current password is incorrect" });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await User.updateOne({ _id: req.user.userId }, { $set: { password: hashedPassword } });
+    return res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error in changing password" });
   }
 });
 
@@ -895,7 +916,7 @@ app.post("/place-order", authMiddleware, async (req, res, next) => {
   }
 });
 
-app.get("/get-orders", async (req, res, next) => {
+app.get("/get-orders", authMiddleware, async (req, res, next) => {
   try {
     const orders = await Order.find();
     return res
@@ -907,34 +928,39 @@ app.get("/get-orders", async (req, res, next) => {
   }
 });
 
-app.post("/upload-image", upload.single("image"), async (req, res, next) => {
-  try {
-    const tempCloudinary = require("cloudinary").v2;
-    tempCloudinary.config({
-      cloud_name: process.env.CLOUD_NAME,
-      api_key: process.env.CLOUD_API_KEY,
-      api_secret: process.env.CLOUD_API_SECRET,
-    });
-    // console.log(tempCloudinary.config());
-    const stream = tempCloudinary.uploader.upload_stream(
-      { folder: "my_app_uploads" },
-      (error, result) => {
-        if (error) {
-          console.error(error);
-          return res
-            .status(500)
-            .json({ message: "Error in uploading image to Cloudinary" });
-        }
-        return res.status(200).json({ url: result.secure_url });
-      },
-    );
+app.post(
+  "/upload-image",
+  authMiddleware,
+  upload.single("image"),
+  async (req, res, next) => {
+    try {
+      const tempCloudinary = require("cloudinary").v2;
+      tempCloudinary.config({
+        cloud_name: process.env.CLOUD_NAME,
+        api_key: process.env.CLOUD_API_KEY,
+        api_secret: process.env.CLOUD_API_SECRET,
+      });
+      // console.log(tempCloudinary.config());
+      const stream = tempCloudinary.uploader.upload_stream(
+        { folder: "my_app_uploads" },
+        (error, result) => {
+          if (error) {
+            console.error(error);
+            return res
+              .status(500)
+              .json({ message: "Error in uploading image to Cloudinary" });
+          }
+          return res.status(200).json({ url: result.secure_url });
+        },
+      );
 
-    stream.end(req.file.buffer);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error in uploading image" });
-  }
-});
+      stream.end(req.file.buffer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Error in uploading image" });
+    }
+  },
+);
 
 app.get("/product-details", async (req, res, next) => {
   try {
