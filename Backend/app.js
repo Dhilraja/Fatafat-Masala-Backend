@@ -56,12 +56,13 @@ app.use(bodyParser.urlencoded({ extended: false }));
 //   next();
 // });
 
-// https://fatafat-masala-frontend.onrender.com
-// http://localhost:4200
+const allowedOrigin = isProd
+  ? "https://fatafat-masala-frontend.onrender.com"
+  : "http://localhost:4200";
 
 app.use(
   cors({
-    origin: "http://localhost:4200", // exact frontend origin
+    origin: allowedOrigin,
     credentials: true,
   }),
 );
