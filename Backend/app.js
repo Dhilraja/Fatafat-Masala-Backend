@@ -603,13 +603,12 @@ app.get("/checkout-products", authMiddleware, async (req, res, next) => {
     );
     if (!cart)
       return res.status(500).json({ message: "Cannot find cart for the user" });
-    let totalPrice = 0;
+    let subtotal = 0;
     let totalQuantity = 0;
-    const deliveryFees = 50;
     let response = [];
     for (const product of cart.items) {
       const selectedProduct = await Product.findById(product.productId);
-      totalPrice += product.quantity * selectedProduct.price;
+      subtotal += product.quantity * selectedProduct.price;
       totalQuantity += product.quantity;
       response.push({
         productId: selectedProduct._id,
@@ -619,7 +618,8 @@ app.get("/checkout-products", authMiddleware, async (req, res, next) => {
         images: product?.productId?.images,
       });
     }
-    totalPrice += deliveryFees;
+    const deliveryFees = subtotal >= 299 ? 0 : 50;
+    const totalPrice = subtotal + deliveryFees;
     return res.status(200).json({
       message: "Checkout products retrieved successfully",
       data: {
@@ -637,7 +637,8 @@ app.get("/checkout-products", authMiddleware, async (req, res, next) => {
 
 app.post("/address", authMiddleware, async (req, res, next) => {
   try {
-    const { _id, name, line1, line2, city, state, pincode, phone, flag } = req.body;
+    const { _id, name, line1, line2, city, state, pincode, phone, flag } =
+      req.body;
     const address = {
       name: name.trim(),
       line1: line1.trim(),
@@ -685,7 +686,9 @@ app.post("/reset-password", async (req, res, next) => {
       return res.status(400).json({ message: "OTP not found or expired" });
     if (otpDocument.attempts >= 3) {
       await Otp.findOneAndDelete({ email });
-      return res.status(400).json({ message: "Too many incorrect attempts. Request a new OTP." });
+      return res
+        .status(400)
+        .json({ message: "Too many incorrect attempts. Request a new OTP." });
     }
     const isMatch = await bcrypt.compare(otp, otpDocument.otpHash);
     if (!isMatch) {
@@ -696,10 +699,18 @@ app.post("/reset-password", async (req, res, next) => {
     }
     await Otp.findOneAndDelete({ email });
     const user = await User.findOne({ username: email });
-    if (!user) return res.status(404).json({ message: "No account found with this email" });
+    if (!user)
+      return res
+        .status(404)
+        .json({ message: "No account found with this email" });
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await User.updateOne({ username: email }, { $set: { password: hashedPassword } });
-    return res.status(200).json({ message: "Password reset successfully", flag: true });
+    await User.updateOne(
+      { username: email },
+      { $set: { password: hashedPassword } },
+    );
+    return res
+      .status(200)
+      .json({ message: "Password reset successfully", flag: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error in resetting password" });
@@ -717,7 +728,10 @@ app.post("/change-password", authMiddleware, async (req, res, next) => {
       return res.status(400).json({ message: "Current password is incorrect" });
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await User.updateOne({ _id: req.user.userId }, { $set: { password: hashedPassword } });
+    await User.updateOne(
+      { _id: req.user.userId },
+      { $set: { password: hashedPassword } },
+    );
     return res.status(200).json({ message: "Password updated successfully" });
   } catch (error) {
     console.error(error);
@@ -729,9 +743,16 @@ app.post("/contact", async (req, res, next) => {
   try {
     const { name, email, phone, message } = req.body;
     if (!name || !email || !message)
-      return res.status(400).json({ message: "Name, email and message are required" });
+      return res
+        .status(400)
+        .json({ message: "Name, email and message are required" });
     const contact = await Contact.create({ name, email, phone, message });
-    return res.status(201).json({ message: "Message received! We'll get back to you soon.", data: contact });
+    return res
+      .status(201)
+      .json({
+        message: "Message received! We'll get back to you soon.",
+        data: contact,
+      });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error saving your message" });
@@ -741,7 +762,9 @@ app.post("/contact", async (req, res, next) => {
 app.get("/contacts", authMiddleware, async (req, res, next) => {
   try {
     const contacts = await Contact.find().sort({ createdAt: -1 });
-    return res.status(200).json({ message: "Contacts fetched", data: contacts });
+    return res
+      .status(200)
+      .json({ message: "Contacts fetched", data: contacts });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error fetching contacts" });
@@ -828,6 +851,8 @@ app.post("/place-order", authMiddleware, async (req, res, next) => {
         total: ele.price * ele.quantity,
       };
     });
+    const deliveryFees = totalAmount >= 299 ? 0 : 50;
+    totalAmount = totalAmount + deliveryFees;
     const shippingAddress = req.body.address;
     let order;
     let attempts = 0;
@@ -865,6 +890,20 @@ app.post("/place-order", authMiddleware, async (req, res, next) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Error in placing order" });
+  }
+});
+
+app.patch("/update-order-status", authMiddleware, async (req, res, next) => {
+  try {
+    const { id, status } = req.body;
+    const validStatuses = ["PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+    if (!validStatuses.includes(status))
+      return res.status(400).json({ message: "Invalid status" });
+    await Order.findByIdAndUpdate(id, { $set: { status } });
+    return res.status(200).json({ message: "Order status updated successfully" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error updating order status" });
   }
 });
 
@@ -939,7 +978,10 @@ app.get("/order-details", async (req, res, next) => {
   try {
     const { id } = req.query;
     console.log(id);
-    const order = await Order.findOne({ _id: id }).populate('items.productId', 'images');
+    const order = await Order.findOne({ _id: id }).populate(
+      "items.productId",
+      "images",
+    );
     if (!order) {
       return res.status(500).json({ message: "Order cannot be found!" });
     }

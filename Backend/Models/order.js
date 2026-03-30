@@ -25,11 +25,12 @@ const OrderSchema = mongoose.Schema({
     city: String,
     state: String,
     pincode: String,
+    phone: String,
   },
 
   status: {
     type: String,
-    enum: ["PLACED", "PAID", "SHIPPED", "DELIVERED", "CANCELLED"],
+    enum: ["PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"],
     default: "PLACED",
   },
 
