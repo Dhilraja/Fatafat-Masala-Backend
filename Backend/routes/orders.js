@@ -27,6 +27,7 @@ router.post("/place-order", authMiddleware, async (req, res) => {
         name: ele.name,
         price: ele.price,
         quantity: ele.quantity,
+        variant: ele.variant,
         total: ele.price * ele.quantity,
       };
     });

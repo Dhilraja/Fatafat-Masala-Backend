@@ -45,7 +45,7 @@ router.post(
   authMiddleware,
   async (req, res) => {
     try {
-      const { name, mrp, price, description } = req.body;
+      const { name, mrp, price, description, variant } = req.body;
       const stream = cloudinary.uploader.upload_stream(
         { folder: "my_app_uploads" },
         async (error, result) => {
@@ -60,10 +60,13 @@ router.post(
             mrp,
             price,
             description,
+            variant,
             images: [{ url: result.secure_url, publicId: result.public_id }],
           });
           await product.save();
-          return res.status(201).json({ message: "Product saved successfully" });
+          return res
+            .status(201)
+            .json({ message: "Product saved successfully" });
         },
       );
       stream.end(req.file.buffer);
@@ -81,7 +84,7 @@ router.patch(
   async (req, res) => {
     try {
       console.log(req.body);
-      const { id, name, mrp, price, description } = req.body;
+      const { id, name, mrp, price, description, variant } = req.body;
       const product = await Product.findById(id);
       if (!product)
         return res.status(500).json({ message: "Cannot find product ID" });
@@ -103,6 +106,7 @@ router.patch(
               mrp,
               price,
               description,
+              variant,
               images: [{ url: result.secure_url, publicId: result.public_id }],
               updatedAt: Date.now(),
             });
@@ -118,10 +122,13 @@ router.patch(
           mrp,
           price,
           description,
+          variant,
           images: product.images,
           updatedAt: Date.now(),
         });
-        return res.status(200).json({ message: "Product updated successfully" });
+        return res
+          .status(200)
+          .json({ message: "Product updated successfully" });
       }
     } catch (error) {
       console.error(error);

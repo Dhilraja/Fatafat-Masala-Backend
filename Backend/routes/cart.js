@@ -34,6 +34,7 @@ router.post("/set-cart-products", authMiddleware, async (req, res) => {
         productId: foundProduct._id,
         name: foundProduct.name,
         price: foundProduct.price,
+        variant: foundProduct.variant,
         quantity: product.quantity,
       });
     }
@@ -68,6 +69,7 @@ router.post("/add-remove-cart-products", authMiddleware, async (req, res) => {
           productId: foundProduct._id,
           name: foundProduct.name,
           price: foundProduct.price,
+          variant: foundProduct.variant,
           quantity: 1,
         },
       ];
@@ -83,6 +85,7 @@ router.post("/add-remove-cart-products", authMiddleware, async (req, res) => {
           productId: foundProduct._id,
           name: foundProduct.name,
           price: foundProduct.price,
+          variant: foundProduct.variant,
           quantity: 1,
         };
         await Cart.findOneAndUpdate(
@@ -95,7 +98,9 @@ router.post("/add-remove-cart-products", authMiddleware, async (req, res) => {
         { userId: req.user.userId, "items.productId": id },
         { $inc: { "items.$.quantity": 1 }, $set: { updatedAt: Date.now() } },
       );
-      return res.status(200).json({ message: "Product is incremented to cart" });
+      return res
+        .status(200)
+        .json({ message: "Product is incremented to cart" });
     } else {
       if (!selectedProduct)
         return res
@@ -143,6 +148,7 @@ router.get("/checkout-products", authMiddleware, async (req, res) => {
         productName: selectedProduct.name,
         price: product.quantity * selectedProduct.price,
         quantity: product.quantity,
+        variant: selectedProduct.variant,
         images: product?.productId?.images,
       });
     }
